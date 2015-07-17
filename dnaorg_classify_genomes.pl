@@ -634,8 +634,13 @@ for(my $l = 0; $l < scalar(@xlist1_output_A); $l++) {
 # output explanation of column headings and other information:
 printf OUTX1 ("#\n");
 printf OUTX1 ("# The above table lists all 'unmappable' CDS, one per line.\n");
-printf OUTX1 ("# An unmappable CDS is a CDS for which our rules for mapping to reference CDS fail. There is more information\n");
-printf OUTX1 ("# on these rules below in the section 'Explanation of how classes are defined and labels are determined'.\n");
+printf OUTX1 ("# An unmappable CDS is a CDS that does not 'map' to any reference CDS in the reference accession ($ref_accn).\n");
+printf OUTX1 ("# A CDS 'maps' to a reference CDS if it matches identically in either the CDS:product annotation\n");
+#printf OUTX1 ("# An unmappable CDS is a CDS for which our rules for mapping to reference CDS fail. There is more information\n");
+#printf OUTX1 ("# on these rules below in the section 'Explanation of how classes are defined and labels are determined'.\n");
+printf OUTX1 ("#\n");
+printf OUTX1 ("# A condensed list, with all unmappable CDS with identical CDS:product and length collapsed to a single line\n");
+printf OUTX1 ("# has been output to $xlist2_outfile\n");
 printf OUTX1 ("#\n");
 printf OUTX1 ("# Explanation of column headings in this table:\n");
 printf OUTX1 ("#\n");
@@ -644,7 +649,7 @@ printf OUTX1 ("# accession:     accession the unmappable CDS occurs in\n");
 printf OUTX1 ("# cls:           index of class this accession belongs to\n");
 printf OUTX1 ("# label:         class 'label', defines which CDS map to reference, see below for more info\n");
 printf OUTX1 ("# #cds:          CDS index in this accession that this line pertains to\n");
-printf OUTX1 ("# product:       CDS:product annotation for this unmappable CDS\n");
+printf OUTX1 ("# product:       CDS:product annotation for these unmappable CDS\n");
 printf OUTX1 ("# length:        length of the unmappable CDS\n");
 printf OUTX1 ("# #ref-cds:      the index of the CDS in the reference that has the closest length to this unmappable CDS\n");
 printf OUTX1 ("# match:         'yes' if '#cds' and '#ref-cds' values are equal, else 'no'\n");
@@ -653,15 +658,17 @@ printf OUTX1 ("# ref-length:    the length of the CDS in the reference that has 
 printf OUTX1 ("# lendiff:       the difference in length between this unmappable CDS and the nearest length reference CDS (abs('ref-length' - 'length')\n");
 printf OUTX1 ("#\n");
 # explain how classes are defined and label strings are constructed
-foreach my $line (@class_explanation_A) { 
-  print OUTX1 $line;
-}
+#foreach my $line (@class_explanation_A) { 
+#  print OUTX1 $line;
+#}
 
 #################################################
 # Collapse list of unmappable CDS and output it
 #################################################
 my $n_x_product_keys = scalar(keys %x_product_accn_ct_H);
 my $nprinted = 0;
+printf OUTX2 ("%-5s  %-40s  %10s  %6s  %s\n", 
+              "#idx", "CDS:product-annotation", "length", "count", "accessions");
 while($nprinted < $n_x_product_keys) { 
   my $max_ct = 0;
   my $max_key = undef;
@@ -671,14 +678,53 @@ while($nprinted < $n_x_product_keys) {
       $max_key = $key;
     }
   }
-  foreach my $len (sort {$x_product_len_accn_ct_HH{$max_key}{$a} <=> $x_product_len_accn_ct_HH{$max_key}{$b}} keys %{$x_product_len_accn_ct_HH{$max_key}}) { 
-    printf OUTX2 ("%-40s  %10d  %10d\n", $max_key, $len, $x_product_len_accn_ct_HH{$max_key}{$len});
+  foreach my $len (sort {$x_product_len_accn_ct_HH{$max_key}{$a} <=> $x_product_len_accn_ct_HH{$max_key}{$b}} keys %{$x_product_len_accn_ct_HH{$max_key}}) {
+    my $accn_str = "";
+    my $naccn = scalar(@{$x_product_len_accn_HHA{$max_key}{$len}});
+    printf("HEYA $max_key $naccn\n");
+    for(my $z = 0; $z < $naccn; $z++) { 
+      $accn_str .= $x_product_len_accn_HHA{$max_key}{$len}[$z];
+      if($z < ($naccn-1)) { 
+        $accn_str .= ",";
+      }
+    }
     $nlines_x2++;
+    printf OUTX2 ("%-5d  %-40s  %10d  %6d  %s\n", $nlines_x2, $max_key, $len, $x_product_len_accn_ct_HH{$max_key}{$len}, $accn_str);
   }
   printf OUTX2 ("\n");
   $x_product_accn_ct_H{$max_key} = 0; # this won't be max again
   $nprinted++;
 }
+printf OUTX2 ("#\n");
+printf OUTX2 ("# The above table lists all unique CDS:product and length combinations for all\n");
+printf OUTX2 ("# $nlines_x1 'unmappable' CDS.\n");
+printf OUTX2 ("# Each line reports a different CDS:product and length combination, and includes\n");
+printf OUTX2 ("# all accessions that have that combination at the end of the line, each separated by a ','.\n");
+printf OUTX2 ("# Identical CDS:product values occur on adjacent lines.\n");
+printf OUTX2 ("# A blank line separates each different CDS:product value.\n");
+printf OUTX2 ("#\n");
+printf OUTX1 ("# An unmappable CDS is a CDS that does not 'map' to any reference CDS in the reference accession ($ref_accn).\n");
+printf OUTX1 ("# A CDS 'maps' to a reference CDS if it matches identically in either the CDS:product annotation\n");
+#printf OUTX2 ("# An unmappable CDS is a CDS for which our rules for mapping to reference CDS fail. There is more information\n");
+#printf OUTX2 ("# on these rules below in the section 'Explanation of how classes are defined and labels are determined'.\n");
+printf OUTX2 ("#\n");
+printf OUTX2 ("# A full list, with each unmappable CDS on a separate line, which includes more information on each\n");
+printf OUTX2 ("# has been output to $xlist1_outfile\n");
+printf OUTX2 ("#\n");
+printf OUTX2 ("# Explanation of column headings in this table:\n");
+printf OUTX2 ("#\n");
+printf OUTX2 ("# idx:                     line index in this file\n");
+printf OUTX2 ("# CDS:product-annotation:  CDS:product annotation for this unmappable CDS\n");
+printf OUTX2 ("# length:                  length of the unmappable CDS\n");
+printf OUTX2 ("# count:                   number of accessions that include an unmappable CDS of this CDS:product annotation\n");
+printf OUTX2 ("#                          and length\n");
+printf OUTX2 ("# accessions:              list of all accessions that include an unmappable CDS of this CDS:product annotation\n");
+printf OUTX2 ("#                          and length, each separated by a ','\n");
+printf OUTX2 ("#\n");
+# explain how classes are defined and label strings are constructed
+#foreach my $line (@class_explanation_A) { 
+#  print OUTX2 $line;
+#}
 
 
 ###################################################################
