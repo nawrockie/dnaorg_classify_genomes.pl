@@ -658,9 +658,9 @@ printf OUTX1 ("# ref-length:    the length of the CDS in the reference that has 
 printf OUTX1 ("# lendiff:       the difference in length between this unmappable CDS and the nearest length reference CDS (abs('ref-length' - 'length')\n");
 printf OUTX1 ("#\n");
 # explain how classes are defined and label strings are constructed
-#foreach my $line (@class_explanation_A) { 
-#  print OUTX1 $line;
-#}
+foreach my $line (@class_explanation_A) { 
+  print OUTX1 $line;
+}
 
 #################################################
 # Collapse list of unmappable CDS and output it
