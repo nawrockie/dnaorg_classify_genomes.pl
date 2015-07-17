@@ -681,7 +681,6 @@ while($nprinted < $n_x_product_keys) {
   foreach my $len (sort {$x_product_len_accn_ct_HH{$max_key}{$a} <=> $x_product_len_accn_ct_HH{$max_key}{$b}} keys %{$x_product_len_accn_ct_HH{$max_key}}) {
     my $accn_str = "";
     my $naccn = scalar(@{$x_product_len_accn_HHA{$max_key}{$len}});
-    printf("HEYA $max_key $naccn\n");
     for(my $z = 0; $z < $naccn; $z++) { 
       $accn_str .= $x_product_len_accn_HHA{$max_key}{$len}[$z];
       if($z < ($naccn-1)) { 
