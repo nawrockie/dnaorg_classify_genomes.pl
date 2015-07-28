@@ -29,6 +29,7 @@ $usage .= " created by running 'dnaorg_fetch_dna_wrapper.pl -ftable' and\n";
 $usage .= " subsequently 'parse-ftable.pl'.\n";
 $usage .= "\n";
 $usage .= " BASIC OPTIONS:\n";
+$usage .= "  -i <f>      : read in file <f> that specifies allowable CDS lengths and CDS:product annotation\n";
 $usage .= "  -t <f>      : fractional length difference threshold for mismatch [default: 0.05]\n";
 $usage .= "  -f          : fetch CDS and genomes to per-class fasta files [default: do not]\n";
 $usage .= "  -s          : use short names: all CDS seqs will be named as sequence accession\n";
@@ -46,7 +47,8 @@ my $start_secs    = ($seconds + ($microseconds / 1000000.));
 my $executable    = $0;
 my $be_verbose    = 1;
 my $df_fraclen    = 0.05;
-my $fraclen       = undef;
+my $fraclen       = undef; # defined with -f <s>
+my $infile        = undef; # defined with -i <s>
 my $do_fetch      = 0; # changed to '1' if -f enabled
 my $do_shortnames = 0; # changed to '1' if -s enabled
 my $do_gene       = 0; # changed to '1' if -gene enabled
@@ -55,7 +57,8 @@ my $do_protid     = 0; # changed to '1' if -protid enabled
 my $do_codonstart = 0; # changed to '1' if -codonstart enabled
 my $do_noexp      = 0; # changed to '1' if -noexp enabled
 
-&GetOptions( "t=s"        => \$fraclen, 
+&GetOptions( "i=s"        => \$infile,
+             "t=s"        => \$fraclen, 
              "f"          => \$do_fetch,
              "s"          => \$do_shortnames, 
 #             "gene"       => \$do_gene,
@@ -90,6 +93,10 @@ my $nlines_x2 = 0;
 # store options used, so we can output them 
 my $opts_used_short = "";
 my $opts_used_long  = "";
+if(defined $infile) { 
+  $opts_used_short .= "-i $infile";
+  $opts_used_long  .= "# option:  allowable lengths and product annotations read from: $infile [-i]\n";
+}
 if(defined $fraclen) { 
   $opts_used_short .= "-t $fraclen";
   $opts_used_long  .= "# option:  setting fractional length threshold to $fraclen [-t]\n";
@@ -176,6 +183,13 @@ print ("# command: $executable $opts_used_short $dir $listfile\n");
 printf("# date:    %s\n", scalar localtime());
 if($opts_used_long ne "") { 
   print $opts_used_long;
+}
+
+# read in the input file, if necessary
+my %in_cds_len_HA = ();     
+my %in_cds_product_HA = ();
+if(defined $infile) { 
+  readInfile($infile, \%in_cds_product_HA, \%in_cds_len_HA);
 }
 
 #########################################################
@@ -356,15 +370,28 @@ for(my $a = 0; $a < $naccn; $a++) {
       getQualifierValues(\%cds_tbl_HHA, $ref_accn, "product", \@ref_cds_product_A);
     }
     $ref_ncds = scalar(@ref_cds_len_A);
-    # determine length tolerances
+
+    # validate all reference CDS have unique CDS:product annotation
+    validateRefCDSAreUnique($ref_ncds, \@ref_cds_product_A);
+
+    # if we read from an infile, make sure that we have information for all reference CDS, now that we know how many there are
+    if(defined $infile) { 
+      validateInfileGivenRefInfo($ref_ncds, $infile, \@ref_cds_product_A, \@ref_cds_len_A, \%in_cds_product_HA, \%in_cds_len_HA);
+    }
 
     print("#\n");
     printf("# Reference accession: $ref_accn\n");
     print("#\n");
-    for(my $rc = 0; $rc < $ref_ncds; $rc++) { 
-      $ref_cds_len_tol_A[$rc] = $fraclen * $ref_cds_len_A[$rc];
-      printf("# Reference CDS product %d: %-30s reference-length: %6d   length-range-for-match: %8.1f to %8.1f\n", $rc+1, $ref_cds_product_A[$rc], $ref_cds_len_A[$rc], ($ref_cds_len_A[$rc] - $ref_cds_len_tol_A[$rc]), ($ref_cds_len_A[$rc] + $ref_cds_len_tol_A[$rc]));
-    }
+    #for(my $rc = 0; $rc < $ref_ncds; $rc++) { 
+    #$ref_cds_len_tol_A[$rc] = $fraclen * $ref_cds_len_A[$rc];
+    #printf("# Reference CDS product %d: %-30s reference-length: %6d   length-range-for-match: %8.1f to %8.1f\n", $rc+1, $ref_cds_product_A[$rc], $ref_cds_len_A[$rc], ($ref_cds_len_A[$rc] - $ref_cds_len_tol_A[$rc]), ($ref_cds_len_A[$rc] + $ref_cds_len_tol_A[$rc]));
+    #}
+
+    # determine length tolerances (CURRENTLY WE DO NOT DO THIS, BECAUSE INFILE CAN SPECIFY OTHER ALLOWABLE LENGTHS)
+    #for(my $rc = 0; $rc < $ref_ncds; $rc++) { 
+    #$ref_cds_len_tol_A[$rc] = $fraclen * $ref_cds_len_A[$rc];
+    #printf("# Reference CDS product %d: %-30s reference-length: %6d   length-range-for-match: %8.1f to %8.1f\n", $rc+1, $ref_cds_product_A[$rc], $ref_cds_len_A[$rc], ($ref_cds_len_A[$rc] - $ref_cds_len_tol_A[$rc]), ($ref_cds_len_A[$rc] + $ref_cds_len_tol_A[$rc]));
+    #}
     $wlabel_str  = (2*$ref_ncds+1) * 2;
     $wstrand_str = $ref_ncds * 2;
     if($wlabel_str  < length("label"))         { $wlabel_str  = length("label"); }
@@ -435,13 +462,35 @@ for(my $a = 0; $a < $naccn; $a++) {
     my $found_match_product = 0;
     # does this match any of the reference genes?
     my $cur_lchar = 'A';
+    my $cur_lidx  = 1;
     # for each reference CDS
     for(my $rc = 0; $rc < $ref_ncds; $rc++) { 
-      if($rc > 0) { $cur_lchar++; }
+      if($rc > 0) { 
+        $cur_lchar++; 
+        $cur_lidx++;
+      }
+      # create an array of all acceptable reference products
+      my @cur_ref_cds_len_A = ($ref_cds_len_A[$rc]);
+      my @cur_ref_cds_product_A = ($ref_cds_product_A[$rc]);
+      # TODO: change how this alw data is stored so we can have more than 1, currently we are limited to 1
+      if(exists ($in_cds_product_HA{"alw"}[$rc])) { 
+        #printf("pushing %s\n", $in_cds_product_HA{"alw"}[$rc]);
+        push(@cur_ref_cds_product_A, $in_cds_product_HA{"alw"}[$rc]);
+      }
       if(! $found_match_product) { 
         $ref_strand    = substr($ref_strand_str, $rc, 1);
-        $match_product = ($ref_cds_product_A[$rc] eq $cds_product_A[$c])  ? 1 : 0;
-        $match_len     = (abs($ref_cds_len_A[$rc] - $cds_len_A[$c]) <= $ref_cds_len_tol_A[$rc]) ? 1 : 0;
+        $match_product = 0;
+        for(my $z = 0; $z < scalar(@cur_ref_cds_product_A); $z++) { 
+          if((! $match_product) && ($cur_ref_cds_product_A[$z] eq $cds_product_A[$c])) { 
+            $match_product = 1; 
+          }
+        }
+        $match_len = 0;
+        for(my $z = 0; $z < scalar(@cur_ref_cds_len_A); $z++) { 
+          if((! $match_len) && (abs($cur_ref_cds_len_A[$z] - $cds_len_A[$c]) <= ($fraclen * $cur_ref_cds_len_A[$z]))) { 
+            $match_len = 1; 
+          }
+        }
         $match_strand  = $cur_strand eq $ref_strand ? 1 : 0;
         # check for case 
         if($match_product) { 
@@ -469,7 +518,7 @@ for(my $a = 0; $a < $naccn; $a++) {
           # case 6: '1:!' diff name, same length, diff strand (could happen twice, take highest indexed gene we find this for)
           # NOTE: we may want to start by examining $c == $rc instead of rc 0..nrc-1, so we will assign this case to 
           #       the in order gene instead of just the first match in the unlikely case of multiple matches
-          $lchar        = $cur_lchar;
+          $lchar        = $cur_lidx;
           $lstrand_char = ($match_strand) ? "=" : "!";
         }
       }
@@ -1361,4 +1410,124 @@ sub stripPath {
   $filename =~ s/^.+\///;
 
   return $filename;
+}
+
+# Subroutine: readInfile()
+# Purpose:    Read an input file specified with -i <s> and store the information therein.
+# Args:       $infile: name of the infile to read
+#             $in_cds_product_HAR: reference to a hash of arrays to store CDS:product info
+#             $in_cds_len_HAR:     reference to a hash of arrays to store CDS length info
+# Returns:    void
+sub readInfile {
+  my $sub_name  = "readInfile()";
+  my $nargs_exp = 3;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+  
+  my ($infile, $in_cds_product_HAR, $in_cds_len_HAR) = (@_);
+
+  open(IN, $infile) || die "ERROR unable to open $infile for reading.";
+  my $ctr = 0;
+  while(my $line = <IN>) { 
+    $ctr++;
+    chomp $line;
+    $line =~ s/^\s+//; # remove leading  whitespace
+    $line =~ s/\s+$//; # remove trailing whitespace
+    if($line !~ m/^\#/ && $line =~ m/\w/) { 
+      if($line =~ /(\S+)\s+(\S+)\s+(\S+)\s+(\S+)\s+(.+)$/) { 
+        my ($type, $idx, $qual, $qval, $value) = ($1, $2, $3, $4, $5);
+        if($type ne "ref" && $type ne "alw" && $type ne "kma") { 
+          die "ERROR first token not 'ref' nor 'alw' nor 'kma' in infile: $infile on line $ctr:\n$line\n"; 
+        }
+        if($qual ne "CDS") { 
+          die "ERROR read non-CDS qualifier in infile: $infile on line $ctr:\n$line\n"; 
+        }
+        if($qval eq "product") { 
+          if(! exists $in_cds_product_HAR->{$type}) { 
+            @{$in_cds_product_HAR->{$type}} = ();
+          }
+          $in_cds_product_HAR->{$type}[$idx-1] = $value;
+        }
+        elsif($qval eq "length") { 
+          if(! exists $in_cds_len_HAR->{$type}) { 
+            @{$in_cds_len_HAR->{$type}} = ();
+          }
+          $in_cds_len_HAR->{$type}[$idx-1] = $value;
+        }
+        else { 
+          die "ERROR unexpected qualifier value $qval in infile: $infile on line $ctr:\n$line\n"; 
+        }
+      }
+      else { 
+        die "ERROR read less than 5 whitespace-delimited tokens in infile: $infile on line $ctr:\n$line\n"; 
+      }
+    }
+  } # end of 'while ($line = <IN>)'
+  return;
+}
+
+# Subroutine: validateInfileGivenRefInfo()
+# Purpose:    Given information read from the parsed ftable about the reference accession, 
+#             validate the information we read from the infile with the -i option.
+# Args:       $ref_ncds:           number of reference CDS
+#             $ref_cds_product_AR: ref to array of CDS:product annotations for the $ref_ncds reference CDS 
+#             $ref_cds_len_AR:     ref to array of lengths for the $ref_ncds reference CDS 
+#             $in_cds_product_HAR: ref to hash of arrays of CDS:product annotations read from the infile (-i)
+#             $in_cds_len_HAR:     ref to hash of arrays of length annotations read from the infile (-i)
+# Returns:    void
+# Dies:       if we didn't read product and length values for all reference accession from the infile
+#             if product and length values read from the infile don't match reference accession info
+sub validateInfileGivenRefInfo {
+  my $sub_name  = "validateInfileGivenRefInfo()";
+  my $nargs_exp = 6;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+  
+  my ($ref_ncds, $infile, $ref_cds_product_AR, $ref_cds_len_AR, $in_cds_product_HAR, $in_cds_len_HAR) = @_;
+
+  if(! defined $in_cds_product_HAR)           { die "ERROR didn't read any CDS:product information from infile $infile\n"; }
+  if(! defined $in_cds_len_HAR)               { die "ERROR didn't read any CDS length information from infile $infile\n"; }
+  if(! defined $in_cds_product_HAR->{"ref"})  { die "ERROR didn't read any reference CDS:product information from infile $infile\n"; }
+  if(! defined $in_cds_len_HAR->{"ref"})      { die "ERROR didn't read any reference CDS length information from infile $infile\n"; }
+  if(scalar(@{$in_cds_product_HAR->{"ref"}}) ne $ref_ncds) { die "ERROR didn't read correct number of CDS:product values from infile $infile\n"; }
+  if(scalar(@{$in_cds_len_HAR->{"ref"}})     ne $ref_ncds) { die "ERROR didn't read correct number of CDS length values from infile $infile\n"; }
+  for(my $i = 1; $i <= $ref_ncds; $i++) { 
+    printf("$sub_name validating CDS $i ... ");
+    if(! defined $in_cds_product_HAR->{"ref"}[($i-1)]) { 
+      die "ERROR CDS:product information not read for CDS $i in infile: $infile"; 
+    }
+    if(! defined $in_cds_len_HAR->{"ref"}[($i-1)]) {
+      die "ERROR CDS length information not read for CDS $i in infile: $infile"; 
+    } 
+    if($in_cds_product_HAR->{"ref"}[($i-1)] ne $ref_cds_product_AR->[($i-1)]) { 
+      die sprintf("ERROR CDS:product information for CDS reference accession does not match feature table for CDS $i in infile: $infile\ninfile: %s\nftable: %s\n", $in_cds_product_HAR->{"ref"}[($i-1)], $ref_cds_product_AR->[($i-1)]);
+    }
+    if($in_cds_len_HAR->{"ref"}[($i-1)] ne $ref_cds_len_AR->[($i-1)]) { 
+      die sprintf("ERROR CDS length information for CDS reference accession does not match feature table for CDS $i in infile: $infile\ninfile: %d\nftable: %d", $in_cds_len_HAR->{"ref"}[($i-1)], $ref_cds_len_AR->[($i-1)]);
+                  
+    }
+    printf(" done.\n");
+  }
+  return;
+}
+
+# Subroutine: validateRefCDSAreUnique()
+# Purpose:    Validate that all CDS:product annotation for all reference CDS 
+#             are unique, i.e. there are no two CDS that have the same value
+#             in their CDS:product annotation.
+# Args:       $ref_ncds:           number of reference CDS
+#             $ref_cds_product_AR: ref to array of CDS:product annotations for the $ref_ncds reference CDS 
+# Returns:    void
+# Dies:       if more than one ref CDS have same CDS:product annotation.
+sub validateRefCDSAreUnique {
+  my $sub_name  = "validateRefCDSAreUnique()";
+  my $nargs_exp = 2;
+  if(scalar(@_) != $nargs_exp) { die "ERROR $sub_name entered with wrong number of input args"; }
+  
+  my ($ref_ncds, $ref_cds_product_AR) = @_;
+
+  my %exists_H = ();
+  for(my $i = 0; $i < $ref_ncds; $i++) { 
+    if(exists $exists_H{$ref_cds_product_AR->[$i]}) { die sprintf("ERROR %s is CDS:product value for more than one reference CDS!", $ref_cds_product_AR->[$i]); }
+  }
+
+  return;
 }
